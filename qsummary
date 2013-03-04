@@ -1,12 +1,12 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python
 import re
-import commands 
+import commands
 import sys
 from string import strip
 import argparse
 from collections import defaultdict
 import time
-import datetime 
+import datetime
 
 
 mK = 1024
@@ -24,22 +24,22 @@ MINUTE = 60
 def tm2sec(tm):
     try:
         return time.mktime(time.strptime(tm))
-    except Exception: 
+    except Exception:
         return 0.0
 
 def mem2bytes(mem):
-    try: 
+    try:
         bytes = float(mem)
-    except ValueError: 
+    except ValueError:
         mod = mem[-1]
         mem = mem[:-1]
-        if mod == "K": 
+        if mod == "K":
             bytes = float(mem) * mK
         elif mod == "M":
             bytes = float(mem) * mM
         elif mod == "G":
             bytes = float(mem) * mG
-        elif mod == "k": 
+        elif mod == "k":
             bytes =  float(mem) * mk
         elif mod == "m":
             bytes = float(mem) * mm
@@ -62,7 +62,7 @@ def dictcount(d):
     v2count = defaultdict(int)
     for v in d.itervalues():
         v2count[v] += 1
-    return '\n'.join(["% 13d  %s" %(k,c) for k,c in v2count.iteritems()])
+    return '\n'.join(sorted(["% 17d  %s" %(k,c) for k,c in v2count.iteritems()]))
 
 def sec2tm(sec):
     return str(datetime.timedelta(seconds=sec))
@@ -70,7 +70,14 @@ def sec2tm(sec):
 
 def get_summary(JOBID):
     text = commands.getoutput("qacct -j %s" %JOBID)
-    
+
+    ## Get status of JOBID to decide whether it is still running or not
+    running = True
+    for line in map(strip, commands.getoutput("qstat -j %s" %JOBID).split("\n")):
+        if line.strip() == "Following jobs do not exist:":
+            running = False
+            break
+
     hosts = set()
     task2status = {}
     task2duration = {}
@@ -78,14 +85,19 @@ def get_summary(JOBID):
     task2mem = {}
     task2fail = {}
 
+    ## New code
+    jobName = set()
+    endTime = set()
+    startTime = set()
+
     for task_block in re.findall("(qname.*?arid\s+[^\n]+)", text, re.DOTALL):
         tinfo = {}
         for line in task_block.split("\n"):
             key, value = strip(line[0:12]), strip(line[12:])
-            try: 
+            try:
                 value = float(value)
-            except ValueError: 
-                try: 
+            except ValueError:
+                try:
                     value = int(value)
                 except ValueError:
                     pass
@@ -98,18 +110,26 @@ def get_summary(JOBID):
         task2mem[tid] = mem2bytes(tinfo["maxvmem"])
         task2cpu[tid] = tinfo["cpu"]
 
+        jobName.add(tinfo["jobname"])
+        startTime.add(tinfo["start_time"])
+        endTime.add(tinfo["end_time"])
+
     summary = ''
     if task2mem:
-        summary +=  "Max mem usage:    " + bytes2mem(max(task2mem.values())) + "\n"
-        summary +=  "Avg mem usage:   " + bytes2mem(sum(task2mem.values()) / float(len(task2mem))) +"\n"
-        summary +=  "Max job duration: " + sec2tm(max(task2duration.values())) + "\n"
-        summary +=  "Avg job duration: " + sec2tm(sum(task2duration.values()) / float(len(task2duration))) +"\n"
+        summary +=  "Job Name:          " + ", ".join(sorted(jobName)) + "\n"
+        summary +=  "Started at:        " + sorted(startTime)[-1] + "\n"
+        if not running:
+            summary +=  "Ended at:          " + sorted(endTime)[0] + "\n"
+        summary +=  "Max mem usage:     " + bytes2mem(max(task2mem.values())) + "\n"
+        summary +=  "Avg mem usage:     " + bytes2mem(sum(task2mem.values()) / float(len(task2mem))) +"\n"
+        summary +=  "Max job duration:  " + sec2tm(max(task2duration.values())) + "\n"
+        summary +=  "Avg job duration:  " + sec2tm(sum(task2duration.values()) / float(len(task2duration))) +"\n"
         summary += '\n'
-        summary +=  " EXIT STATUS     COUNT \n" 
-        summary +=  "=============  ========\n"
+        summary +=  "   EXIT STATUS       COUNT  \n"
+        summary +=  "=================  =========\n"
         summary += dictcount(task2status) + "\n\n"
         summary += 'You can get more info by running "qacct -j %s"\n' %JOBID
-        
+
         #summary += '\n'.join(map(str, [k for k, v in task2status.iteritems() if v!=0]))
 
     if args.dumpfile:
@@ -119,7 +139,7 @@ def get_summary(JOBID):
         for tid in sorted(task2status):
             print >>OUT, "\t".join(map(str, [tid, task2status[tid], bytes2mem(task2mem[tid]), sec2tm(task2duration[tid]), task2cpu[tid]]))
         OUT.close()
-        
+
     return summary
 
 if __name__ == "__main__":
@@ -135,46 +155,46 @@ if __name__ == "__main__":
 
 """
 
-qname        t99999_m128_c64.q   
-hostname     trantor4.crg.es     
-group        nogroup             
-owner        jhuerta             
-project      NONE                
-department   defaultdepartment   
-jobname      test_job.sh         
-jobnumber    175                 
-taskid       1442                
-account      sge                 
-priority     0                   
+qname        t99999_m128_c64.q
+hostname     trantor4.crg.es
+group        nogroup
+owner        jhuerta
+project      NONE
+department   defaultdepartment
+jobname      test_job.sh
+jobnumber    175
+taskid       1442
+account      sge
+priority     0
 qsub_time    Wed Apr  4 18:20:44 2012
 start_time   Wed Apr  4 18:28:00 2012
 end_time     Wed Apr  4 18:28:41 2012
-granted_pe   NONE                
-slots        1                   
+granted_pe   NONE
+slots        1
 failed       100 : assumedly after job
-exit_status  137                 
-ru_wallclock 41           
-ru_utime     0.004        
-ru_stime     0.012        
-ru_maxrss    1636                
-ru_ixrss     0                   
-ru_ismrss    0                   
-ru_idrss     0                   
-ru_isrss     0                   
-ru_minflt    1245                
-ru_majflt    0                   
-ru_nswap     0                   
-ru_inblock   0                   
-ru_oublock   16                  
-ru_msgsnd    0                   
-ru_msgrcv    0                   
-ru_nsignals  0                   
-ru_nvcsw     19                  
-ru_nivcsw    3                   
-cpu          7.460        
-mem          0.044             
-io           0.000             
-iow          0.000             
+exit_status  137
+ru_wallclock 41
+ru_utime     0.004
+ru_stime     0.012
+ru_maxrss    1636
+ru_ixrss     0
+ru_ismrss    0
+ru_idrss     0
+ru_isrss     0
+ru_minflt    1245
+ru_majflt    0
+ru_nswap     0
+ru_inblock   0
+ru_oublock   16
+ru_msgsnd    0
+ru_msgrcv    0
+ru_nsignals  0
+ru_nvcsw     19
+ru_nivcsw    3
+cpu          7.460
+mem          0.044
+io           0.000
+iow          0.000
 maxvmem      30.965M
 arid         undefi
 """
