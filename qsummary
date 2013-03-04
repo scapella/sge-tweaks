@@ -87,8 +87,8 @@ def get_summary(JOBID):
 
     ## New code
     jobName = set()
-    endTime = set()
-    startTime = set()
+    endTime = None
+    startTime = None
 
     for task_block in re.findall("(qname.*?arid\s+[^\n]+)", text, re.DOTALL):
         tinfo = {}
@@ -111,15 +111,28 @@ def get_summary(JOBID):
         task2cpu[tid] = tinfo["cpu"]
 
         jobName.add(tinfo["jobname"])
-        startTime.add(tinfo["start_time"])
-        endTime.add(tinfo["end_time"])
+
+        ## Determine the starting and ending, if the job is already finished,
+        ## times for the input job ID
+        if not startTime:
+            startTime = time.strptime(tinfo["start_time"])
+        startTime = startTime if startTime < time.strptime(tinfo["start_time"]) \
+            else time.strptime(tinfo["start_time"])
+        if not endTime:
+            endTime = time.strptime(tinfo["end_time"])
+        endTime = endTime if endTime > time.strptime(tinfo["end_time"]) \
+            else time.strptime(tinfo["end_time"])
+
+    ## Format adequantely data-time variables
+    startingTime = time.strftime("%d/%b/%y %H:%M:%S", startTime)
+    endingTime = time.strftime("%d/%b/%y %H:%M:%S", endTime)
 
     summary = ''
     if task2mem:
         summary +=  "Job Name:          " + ", ".join(sorted(jobName)) + "\n"
-        summary +=  "Started at:        " + sorted(startTime)[-1] + "\n"
+        summary +=  "Started at:        " + startingTime + "\n"
         if not running:
-            summary +=  "Ended at:          " + sorted(endTime)[0] + "\n"
+            summary +=  "Ended at:          " + endingTime + "\n"
         summary +=  "Max mem usage:     " + bytes2mem(max(task2mem.values())) + "\n"
         summary +=  "Avg mem usage:     " + bytes2mem(sum(task2mem.values()) / float(len(task2mem))) +"\n"
         summary +=  "Max job duration:  " + sec2tm(max(task2duration.values())) + "\n"
